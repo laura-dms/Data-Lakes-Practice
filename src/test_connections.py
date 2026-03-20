@@ -12,7 +12,7 @@ def test_mysql():
     try:
         conn = mysql.connector.connect(
             host="localhost", user="root",
-            password="root", database="staging"
+            password="root", database="staging", port=3307
         )
         cursor = conn.cursor()
         cursor.execute("SELECT 1")
