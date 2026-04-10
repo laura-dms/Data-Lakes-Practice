@@ -143,17 +143,12 @@ default_args = {
     'retry_delay': timedelta(minutes=5),
 }
 
-dag = DAG(
-    'data_lake_pipeline',
-    default_args=default_args,
-    description='Pipeline ETL pour le traitement des données',
-    schedule=timedelta(days=1),
-)
-
 # Définition du DAG
 with DAG(
     'data_lake_pipeline', 
     default_args=default_args, 
+    description='Pipeline ETL pour le traitement des données',
+    schedule=timedelta(days=1),
     schedule_interval=None,  # Déclenchement manuel
     catchup=False            # Évite de lancer les exécutions passées depuis 2024
 ) as dag:
