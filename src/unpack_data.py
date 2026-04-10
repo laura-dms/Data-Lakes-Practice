@@ -30,6 +30,8 @@ def download_wikitext():
         - second argument (name) : "wikitext-2-raw-v1"
     """
     # TODO: Charger et retourner le dataset
+    ds = load_dataset("Salesforce/wikitext", "wikitext-2-raw-v1")
+    return ds
     pass
 
 
@@ -63,7 +65,14 @@ def save_split_to_file(dataset_split, output_path: Path) -> int:
     - Utiliser strip() pour vérifier si la ligne est vide
     """
     # TODO: Implémenter la sauvegarde
-    pass
+    count = 0
+    for item in dataset_split:
+        text = item['text'].strip()
+        if text != "":
+            with open(output_path, 'a', encoding='utf-8') as f:
+                f.write(text + '\n')
+            count += 1
+    return count
 
 
 def unpack_data(output_dir: str) -> None:
@@ -96,6 +105,13 @@ def unpack_data(output_dir: str) -> None:
     output_path = Path(output_dir)
 
     # TODO: Implémenter la logique de téléchargement et sauvegarde
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    ds = download_wikitext()
+    for split in ['train', 'validation', 'test']:
+        split_data = ds[split]
+        output_file = output_path / f"wikitext-{split}.txt"
+        count = save_split_to_file(split_data, output_file)
+        print(f"Split '{split}' : {count} lignes sauvegardées dans {output_file}")
     pass
 
 
