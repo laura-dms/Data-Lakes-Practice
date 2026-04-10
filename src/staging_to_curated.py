@@ -10,14 +10,15 @@ Usage:
         --max-length 512
 """
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 import mysql.connector
+from mysql.connector import Error
 from pymongo import MongoClient
 from transformers import AutoTokenizer
 from tqdm import tqdm
 
 
-def get_staging_data(host, user, password, database, split="train"):
+def get_staging_data(host, user, password, database, port, split="train",):
     """
     Récupère les textes depuis la table MySQL 'texts' pour un split donné.
     
@@ -36,7 +37,20 @@ def get_staging_data(host, user, password, database, split="train"):
     #   4. Récupérer tous les résultats avec fetchall()
     #   5. Fermer la connexion
     #   6. Retourner les résultats
-    pass
+
+    try:
+        conn = mysql.connector.connect(
+            host=host, user=user, password=password, database=database, port=port
+        )
+        cursor = conn.cursor()
+        query = "SELECT id, text FROM texts WHERE split = %s"
+        cursor.execute(query, (split,))
+        results = cursor.fetchall()
+        conn.close()
+        return results
+    except Error as e:
+        print(f"Erreur de connexion MySQL : {e}")
+        return None
 
 
 def tokenize_texts(texts, tokenizer, max_length=512):
@@ -61,7 +75,8 @@ def tokenize_texts(texts, tokenizer, max_length=512):
     #
     #   Note : le tokenizer accepte directement une liste de textes,
     #   ce qui est beaucoup plus rapide qu'une boucle.
-    pass
+    encoded = tokenizer(texts, truncation=True, max_length=max_length, padding=False)
+    return encoded["input_ids"] # liste de tokens
 
 
 def prepare_documents(rows, all_tokens, split_name, tokenizer_name, max_length):
@@ -98,7 +113,31 @@ def prepare_documents(rows, all_tokens, split_name, tokenizer_name, max_length):
     #   Pour chaque paire, construire le dictionnaire décrit ci-dessus.
     #   Utiliser datetime.utcnow().isoformat() pour le timestamp.
     #   Retourner la liste de documents.
-    pass
+
+    documents=[]
+
+    for elt1, elt2 in zip(rows, all_tokens):
+        id_mysql = elt1[0] # id MySQL
+        text = elt1[1] # texte original
+        tokens = elt2 # liste de tokens
+        num_tokens = len(tokens) # nombre de tokens
+        metadata = {
+            "source": "mysql_staging",
+            "split": split_name,
+            "tokenizer": tokenizer_name,
+            "max_length": max_length,
+            "processed_at": datetime.now(timezone.utc).isoformat()
+        }
+        document = {
+            "original_id": id_mysql,
+            "text": text,
+            "tokens": tokens,
+            "num_tokens": num_tokens,
+            "metadata": metadata
+        }
+        documents.append(document)
+
+    return documents
 
 
 def insert_to_mongodb(documents, mongo_uri, batch_size=1000):
@@ -120,7 +159,22 @@ def insert_to_mongodb(documents, mongo_uri, batch_size=1000):
     #      - Appeler collection.insert_many(batch) sur chaque tranche
     #   5. Afficher le nombre total de documents insérés
     #   6. Fermer la connexion
-    pass
+    client = MongoClient(mongo_uri)
+    # db : curated
+    # collection : wikitext
+    collection = client["curated"]["wikitext"]
+    collection.delete_many({})
+
+    #insertion des documents par batch
+    total_inserted = 0
+
+    for i in range(0, len(documents), batch_size):
+        batch = documents[i:i+batch_size]
+        result = collection.insert_many(batch)
+        total_inserted += len(result.inserted_ids)
+    print(f"  {total_inserted} documents insérés dans MongoDB.")
+
+    client.close()
 
 
 def verify_mongodb(mongo_uri):
@@ -152,7 +206,30 @@ def verify_mongodb(mongo_uri):
     #      Exécuter avec collection.aggregate(pipeline)
     #
     #   5. Fermer la connexion
-    pass
+    client = MongoClient(mongo_uri)
+    collection = client["curated"]["wikitext"]
+
+    total_docs = collection.count_documents({})
+    print(f"Nombre total de documents dans MongoDB : {total_docs}")
+
+    print("3 documents exemple :")
+    for doc in collection.find().limit(3):
+        print(f"  ID: {doc['original_id']}, Text: {doc['text'][:60]}, Num tokens: {doc['num_tokens']}")
+
+    # Pipeline d'agrégation pour les statistiques sur num_tokens avec $group
+    # Fonctions natives MongoDB : $avg, $min, $max
+    pipeline = [
+             {"$group": {
+                 "_id": None,
+                 "avg_tokens": {"$avg": "$num_tokens"},
+                 "min_tokens": {"$min": "$num_tokens"},
+                 "max_tokens": {"$max": "$num_tokens"}
+             }}
+         ]
+    stats = collection.aggregate(pipeline)
+    print(list(stats))
+    # for stat in stats:
+    #     print(f"Statistiques sur le nombre de tokens : avg={stat['avg_tokens']:.2f}, min={stat['min_tokens']}, max={stat['max_tokens']}")
 
 
 def main():
@@ -167,13 +244,14 @@ def main():
     parser.add_argument("--tokenizer", type=str, default="distilbert-base-uncased")
     parser.add_argument("--max-length", type=int, default=512)
     parser.add_argument("--split", type=str, default="train")
+    parser.add_argument("--db-port", type=str, default="3307")
     args = parser.parse_args()
 
     # 1. Récupérer les données depuis MySQL
     print(f"Récupération du split '{args.split}' depuis MySQL...")
     rows = get_staging_data(
         args.db_host, args.db_user, args.db_password,
-        args.db_name, args.split
+        args.db_name, args.db_port, args.split
     )
     if not rows:
         print("Aucune donnée récupérée depuis MySQL.")
