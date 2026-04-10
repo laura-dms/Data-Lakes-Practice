@@ -1,0 +1,32 @@
+schema: '2.0'
+stages:
+  unpack:
+    cmd: python src/unpack_data.py --input_dir ./data/bronze/random_split 
+      --bucket_name raw --output_file_name combined_raw.csv
+    deps:
+    - path: data/bronze/random_split
+      hash: md5
+      md5: d5b88a1d8afe5d816fcffcb54f13df12.dir
+      size: 1302298596
+      nfiles: 200
+    - path: src/unpack_data.py
+      hash: md5
+      md5: d9564b8960e7d7b3ee04eb146ea7df54
+      size: 5733
+  preprocess:
+    cmd: python src/preprocess_to_staging.py --bucket_raw raw --bucket_staging 
+      staging --input_file combined_raw.csv --output_prefix preprocessed
+    deps:
+    - path: src/preprocess_to_staging.py
+      hash: md5
+      md5: ac51e992b3328c0be18015129bee2721
+      size: 4793
+  curate:
+    cmd: python src/process_to_curated.py --bucket_staging staging 
+      --bucket_curated curated --input_file preprocessed_train.csv --output_file
+      tokenized_train.csv
+    deps:
+    - path: src/process_to_curated.py
+      hash: md5
+      md5: ae0eacce28ae03457826a4ced9e8d2f7
+      size: 3190
