@@ -40,7 +40,7 @@ services:
       - MYSQL_ROOT_PASSWORD=root
       - MYSQL_DATABASE=staging
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -55,7 +55,7 @@ services:
     environment:
       - POSTGRES_USER=airflow
       - POSTGRES_PASSWORD=airflow
-      - POSTGRES_DB=airflow
+      - POSTGRES_DB=airflowR
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -65,7 +65,7 @@ services:
       resources:
         limits:
           memory: 4G
-    image: apache/airflow:2.7.1
+    image: apache/airflow-webserver:2.7.1
     container_name: airflow-webserver
     depends_on:
       - postgres
@@ -94,7 +94,7 @@ services:
       resources:
         limits:
           memory: 4G
-    image: apache/airflow:2.7.1
+    image: apache/airflow-scheduler:2.7.1
     container_name: airflow-scheduler
     depends_on:
       - airflow-webserver
@@ -111,25 +111,18 @@ services:
 
   airflow-init:
     build: .
-    image: apache/airflow:2.7.1
+    image: apache/airflow-init:2.7.1
     container_name: airflow-init
     depends_on:
       - postgres
     environment:
       - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-    command: >
-      bash -c "
-        airflow db init &&
-        airflow users delete --username airflow || true &&
-        airflow users create \
-          --username airflow \
-          --password airflow \
-          --firstname Admin \
-          --lastname User \
-          --role Admin \
-          --email admin@example.com
-      "
+      - _AIRFLOW_DB_UPGRADE=true
+      - _AIRFLOW_WWW_USER_CREATE=true
+      - _AIRFLOW_WWW_USER_USERNAME=airflow
+      - _AIRFLOW_WWW_USER_PASSWORD=airflow
+    command: version
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
