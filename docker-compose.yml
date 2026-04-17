@@ -1,8 +1,8 @@
-version: '3.8'
+#version: '3.8'
 
 services:
   localstack:
-    image: localstack/localstack
+    image: localstack/localstack:3.0.2
     container_name: localstack
     ports:
       - "4566:4566"
@@ -55,7 +55,7 @@ services:
     environment:
       - POSTGRES_USER=airflow
       - POSTGRES_PASSWORD=airflow
-      - POSTGRES_DB=airflowR
+      - POSTGRES_DB=airflow
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -73,6 +73,7 @@ services:
       - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__WEBSERVER__SECRET_KEY=your_secret_key_here
+      - AIRFLOW__WEBSERVER__WEB_SERVER_MASTER_TIMEOUT=300
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
@@ -122,7 +123,7 @@ services:
       - _AIRFLOW_WWW_USER_CREATE=true
       - _AIRFLOW_WWW_USER_USERNAME=airflow
       - _AIRFLOW_WWW_USER_PASSWORD=airflow
-    command: version
+    command: db init
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs

@@ -9,14 +9,46 @@ from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from datetime import datetime, timedelta
 from transformers import AutoTokenizer
+import boto3
+import os
 
 # Importez des fonctions des scripts du TP3
-import unpack_data
-import load_to_staging
-import staging_to_curated 
+from unpack_data import unpack_data
+from load_to_staging import download_wikitext, clean_split, create_mysql_connection, create_table, insert_data, validate_data
+from staging_to_curated import get_staging_data, tokenize_texts, prepare_documents, insert_to_mongodb, verify_mongodb
 
 def data_to_raw(**kwargs):
     unpack_data(output_dir="data/raw")
+
+    output_local = "data/raw"
+
+    # Connection à LocalStack S3
+    # Note : 'http://localstack:4566' est correct car Airflow et LocalStack sont dans le même réseau Docker
+    s3 = boto3.client(
+        's3',
+        endpoint_url='http://localstack:4566', # On utilise le nom du service Docker
+        aws_access_key_id='test',
+        aws_secret_access_key='test',
+        region_name='us-east-1'
+    )
+    
+    # 3. On crée le bucket s'il n'existe pas
+    try:
+        s3.create_bucket(Bucket='raw')
+        print("Bucket 'raw' créé avec succès.")
+    except Exception as e:
+        print(f"Le bucket existe déjà ou erreur : {e}")
+    
+    # 4. Upload des fichiers générés
+    # On vérifie que le dossier existe avant de lister
+    if os.path.exists(output_local):
+        for filename in os.listdir(output_local):
+            if filename.endswith(".txt"):
+                file_path = os.path.join(output_local, filename)
+                s3.upload_file(file_path, "raw", filename)
+                print(f"Fichier {filename} envoyé vers S3 bucket 'raw'")
+    else:
+        print(f"Erreur : Le dossier {output_local} est introuvable.")
 
 def raw_to_curated(**kwargs):
     """
@@ -24,20 +56,20 @@ def raw_to_curated(**kwargs):
     """
     # 1. Paramètres de connexion (à adapter selon votre environnement)
     db_config = {
-        "host": "localhost",
+        "host": "mysql",
         "user": "root",
         "password": "root",
         "database": "staging",
-        "port": "3307"
+        "port": "3306" # port interne mysql
     }
 
     # 2. Chargement du dataset
     print("Étape 1 : Chargement de WikiText-2...")
-    dataset = load_to_staging.download_wikitext()
+    dataset = download_wikitext()
     
     # 3. Connexion à MySQL
     print("Étape 2 : Connexion à la base MySQL Staging...")
-    connection = load_to_staging.create_mysql_connection(
+    connection = create_mysql_connection(
         db_config["host"], 
         db_config["user"], 
         db_config["password"], 
@@ -48,20 +80,20 @@ def raw_to_curated(**kwargs):
     if connection:
         try:
             # 4. Création de la table si elle n'existe pas
-            load_to_staging.create_table(connection)
+            create_table(connection)
 
             # 5. Boucle de nettoyage et insertion
             for split_name in ["train", "validation", "test"]:
                 print(f"Traitement du split : {split_name}")
                 
                 # Appel de votre fonction de nettoyage
-                cleaned_data = load_to_staging.clean_split(dataset[split_name])
+                cleaned_data = clean_split(dataset[split_name])
                 
                 # Appel de votre fonction d'insertion
-                load_to_staging.insert_data(connection, cleaned_data, split_name)
+                insert_data(connection, cleaned_data, split_name)
             
             # 6. Validation finale dans les logs Airflow
-            load_to_staging.validate_data(connection)
+            validate_data(connection)
             
         finally:
             connection.close()
@@ -76,12 +108,12 @@ def curated_to_staging(**kwargs):
     """
     # 1. Configuration des paramètres
     config = {
-        "mysql_host": "localhost",
+        "mysql_host": "mysql",
         "mysql_user": "root",
         "mysql_password": "root",
         "mysql_db": "staging",
-        "mysql_port": "3307",
-        "mongo_uri": "mongodb://localhost:27017/",
+        "mysql_port": "3306",
+        "mongo_uri": "mongodb://mongodb:27017/",
         "tokenizer_name": "distilbert-base-uncased",
         "max_length": 512
     }
@@ -91,7 +123,7 @@ def curated_to_staging(**kwargs):
     for split in ["train", "validation", "test"]:
         print(f"--- Traitement du split {split} pour MongoDB ---")
         
-        rows = staging_to_curated.get_staging_data(
+        rows = get_staging_data(
             config["mysql_host"],
             config["mysql_user"],
             config["mysql_password"],
@@ -110,14 +142,14 @@ def curated_to_staging(**kwargs):
         tokenizer = AutoTokenizer.from_pretrained(config["tokenizer_name"])
         texts = [row[1] for row in rows]
         
-        all_tokens = staging_to_curated.tokenize_texts(
+        all_tokens = tokenize_texts(
             texts, 
             tokenizer, 
             config["max_length"]
         )
 
         # 4. Préparation des dictionnaires (Documents)
-        documents = staging_to_curated.prepare_documents(
+        documents = prepare_documents(
             rows, 
             all_tokens, 
             split, 
@@ -126,10 +158,10 @@ def curated_to_staging(**kwargs):
         )
 
         # 5. Insertion dans MongoDB
-        staging_to_curated.insert_to_mongodb(documents, config["mongo_uri"])
+        insert_to_mongodb(documents, config["mongo_uri"])
 
     # 6. Vérification finale
-    staging_to_curated.verify_mongodb(config["mongo_uri"])
+    verify_mongodb(config["mongo_uri"])
     
 
 # D´efinition du DAG
