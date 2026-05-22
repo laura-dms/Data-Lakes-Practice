@@ -5,9 +5,9 @@ from elasticsearch import Elasticsearch
 
 def transform_and_load():
     # Connexions locales
-    s3 = boto3.client('s3', endpoint_url='http://localhost:4566', 
+    s3 = boto3.client('s3', endpoint_url='http://localstack:4566', 
                       aws_access_key_id='test', aws_secret_access_key='test')
-    es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
+    es = Elasticsearch([{'host': 'elasticsearch', 'port': 9200}])
 
     # 1. Récupérer les objets du bucket raw
     try:
@@ -41,6 +41,7 @@ def transform_and_load():
 
     except Exception as e:
         print(f"Erreur : {e}")
+        raise
 
 if __name__ == "__main__":
     transform_and_load()
