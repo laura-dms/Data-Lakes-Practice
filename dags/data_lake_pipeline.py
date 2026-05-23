@@ -8,16 +8,13 @@
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from datetime import datetime, timedelta
-from transformers import AutoTokenizer
-import boto3
 import os
 
 # Importez des fonctions des scripts du TP3
-from unpack_data import unpack_data
-from load_to_staging import download_wikitext, clean_split, create_mysql_connection, create_table, insert_data, validate_data
-from staging_to_curated import get_staging_data, tokenize_texts, prepare_documents, insert_to_mongodb, verify_mongodb
 
 def data_to_raw(**kwargs):
+    import boto3
+    from unpack_data import unpack_data
     unpack_data(output_dir="data/raw")
 
     output_local = "data/raw"
@@ -54,6 +51,8 @@ def raw_to_curated(**kwargs):
     """
     Lit les données (via HuggingFace ou local), les nettoie et les insère dans MySQL.
     """
+    from load_to_staging import download_wikitext, clean_split, create_mysql_connection, create_table, insert_data, validate_data
+
     # 1. Paramètres de connexion (à adapter selon votre environnement)
     db_config = {
         "host": "mysql",
@@ -106,6 +105,8 @@ def curated_to_staging(**kwargs):
     """
     Récupère les données de MySQL, les tokenise et les charge dans MongoDB.
     """
+    from transformers import AutoTokenizer
+    from staging_to_curated import get_staging_data, tokenize_texts, prepare_documents, insert_to_mongodb, verify_mongodb
     # 1. Configuration des paramètres
     config = {
         "mysql_host": "mysql",
